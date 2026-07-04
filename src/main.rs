@@ -1,86 +1,77 @@
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(RapierPhysicsPlugin::<()>::default())
-        // .add_plugins(RapierDebugRenderPlugin::default()) // Раскомментируйте, если хотите видеть границы коллайдеров
-        .add_systems(Startup, setup_scene)
-        .add_systems(Update, update_tracking_system) // Указываем правильную систему обновления
+        .add_systems(Startup, setup)
+        .add_systems(Update, ios_button_system)
         .run();
 }
 
-#[derive(Component)]
-struct Target;
-
-#[derive(Component)]
-struct Tracker;
-
-fn setup_scene(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
 
-    // 1. Создаем цель (Target)
-    commands.spawn((
-        SpriteBundle {
-            sprite: Sprite { 
-                color: Color::srgb(0.0, 0.0, 1.0), 
-                custom_size: Some(Vec2::new(30.0, 30.0)), 
-                ..default() 
-            },
-            transform: Transform::from_xyz(200.0, 0.0, 0.0),
-            ..default()
-        },
-        Target,
-        Collider::cuboid(15.0, 15.0), // ОБЯЗАТЕЛЬНО: коллайдер, чтобы луч попадал
-    ));
+    // Загружаем шрифт из папки assets/fonts/
+    let font = asset_server.load("fonts/arial_bolditalicmt.ttf");
 
-    // 2. Создаем преследователя (Tracker)
-    commands.spawn((
-        SpriteBundle {
-            sprite: Sprite { 
-                color: Color::srgb(1.0, 1.0, 0.0), 
-                custom_size: Some(Vec2::new(30.0, 30.0)), 
-                ..default() 
-            },
-            transform: Transform::from_xyz(-200.0, 0.0, 0.0),
+    commands.spawn(NodeBundle {
+        style: Style {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            
+            align_items: AlignItems::Center,
             ..default()
         },
-        Tracker,
-        Collider::cuboid(15.0, 15.0), // ОБЯЗАТЕЛЬНО: коллайдер
-    ));
+        ..default()
+    })
+    .with_children(|parent| {
+        parent.spawn(ButtonBundle {
+            style: Style {
+                width: Val::Px(240.0),
+                height: Val::Px(56.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+               
+                ..default()
+            },
+            border_radius: BorderRadius::all(Val::Px(16.0)),
+            background_color: BackgroundColor(Color::srgb(0.0, 0.48, 1.0)),
+            ..default()
+        })
+        .with_children(|button| {
+            button.spawn(TextBundle::from_section(
+                "Продолжить",
+                TextStyle {
+                    font: font.clone(), // Применяем загруженный шрифт
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                },
+            ));
+        });
+    });
 }
 
-fn update_tracking_system(
-    rapier_context: Res<RapierContext>,
-    mut gizmos: Gizmos,
-    time: Res<Time>,
-    mut query_target: Query<&mut Transform, (With<Target>, Without<Tracker>)>,
-    mut query_tracker: Query<&mut Transform, With<Tracker>>,
+fn ios_button_system(
+    mut interaction_query: Query<
+        (&Interaction, &mut BackgroundColor, &mut Transform),
+        (Changed<Interaction>, With<Button>),
+    >,
 ) {
-    let Ok(mut target_transform) = query_target.get_single_mut() else { return; };
-    let Ok(mut tracker_transform) = query_tracker.get_single_mut() else { return; };
-
-    // 1. Движение цели по вертикали
-    let time_seconds = time.elapsed_seconds();
-    target_transform.translation.y = (time_seconds.sin()) * 100.0;
-
-    // 2. Вычисление направления
-    let target_pos = target_transform.translation.truncate();
-    let tracker_pos = tracker_transform.translation.truncate();
-    let direction = (target_pos - tracker_pos).normalize_or_zero();
-    let max_toi = 500.0;
-
-    // 3. Raycast: проверяем попадание луча
-    let hit = rapier_context.cast_ray(
-        tracker_pos,
-        direction,
-        max_toi,
-        true, // solid
-        QueryFilter::default().exclude_sensors(), // игнорируем сенсоры
-    );
-
-    // 4. Отрисовка луча (зеленый если попали, красный если мимо)
-    let color = if hit.is_some() { Color::srgb(0.0, 1.0, 0.0) } else { Color::srgb(1.0, 0.0, 0.0) };
-    gizmos.line_2d(tracker_pos, tracker_pos + direction * max_toi, color);
+    for (interaction, mut color, mut transform) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                *color = BackgroundColor(Color::srgb(0.0, 0.35, 0.85));
+                transform.scale = Vec3::splat(0.95);
+            }
+            Interaction::Hovered => {
+                *color = BackgroundColor(Color::srgb(0.1, 0.55, 1.0));
+                transform.scale = Vec3::splat(1.0);
+            }
+            Interaction::None => {
+                *color = BackgroundColor(Color::srgb(0.0, 0.48, 1.0));
+                transform.scale = Vec3::splat(1.0);
+            }
+        }
+    }
 }
